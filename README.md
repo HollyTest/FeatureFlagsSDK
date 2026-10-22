@@ -62,3 +62,14 @@ val flagState by androidClient.flagState.collectAsState()
 
 ## Running the Sample
 The project includes a `:sample` module (an Android App) built with Jetpack Compose. It includes a mock server (`SampleFlagSource`) that allows you to simulate various scenarios like offline mode, slow network, corrupted configurations, and version downgrades to see how the SDK gracefully handles edge cases.
+
+
+## Demo
+https://github.com/user-attachments/assets/adb091d4-9fc2-4cdf-92b2-a73b1a7183da
+
+Cache:
+<img width="1029" height="348" alt="cache-screenshot" src="https://github.com/user-attachments/assets/b5b7a0fd-9f94-4b1f-b52e-481a00fb03e1" />
+
+
+
+
