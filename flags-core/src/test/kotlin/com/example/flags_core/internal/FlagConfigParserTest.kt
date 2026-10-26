@@ -1,8 +1,7 @@
-package com.example.flags_core
+package com.example.flags_core.internal
 
 import junit.framework.TestCase.assertEquals
 import org.junit.Test
-import java.lang.IllegalArgumentException
 
 class FlagConfigParserTest {
 
@@ -72,7 +71,7 @@ class FlagConfigParserTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun throwsOnInvalidFlagName() {
+    fun throwsOnInvalidFlagNameHeader() {
         val json = """
             {
                 "version": 10,
@@ -88,7 +87,23 @@ class FlagConfigParserTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun throwsOnMissingEnabledInRule() {
+    fun throwsOnInvalidFlagNameCharacter() {
+        val json = """
+            {
+                "version": 10,
+                "flags": {
+                    "invalid-name": {
+                        "enabled": true,
+                        "rollout": 50
+                    }
+                }
+            }
+        """.trimIndent()
+        FlagConfigParser.parse(json)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun throwsOnMissingEnabledInFlag() {
         val json = """
             {
                 "version": 1,
@@ -103,7 +118,7 @@ class FlagConfigParserTest {
     }
     
     @Test(expected = IllegalArgumentException::class)
-    fun throwsOnMissingRolloutInRule() {
+    fun throwsOnMissingRolloutInFlag() {
         val json = """
             {
                 "version": 1,

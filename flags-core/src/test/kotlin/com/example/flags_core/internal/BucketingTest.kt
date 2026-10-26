@@ -1,4 +1,6 @@
-package com.example.flags_core
+package com.example.flags_core.internal
+
+import com.example.flags_core.internal.Bucketing
 
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
