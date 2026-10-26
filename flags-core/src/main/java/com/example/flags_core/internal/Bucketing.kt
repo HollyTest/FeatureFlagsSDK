@@ -1,4 +1,4 @@
-package com.example.flags_core
+package com.example.flags_core.internal
 
 import java.security.MessageDigest
 
@@ -9,7 +9,7 @@ internal object Bucketing {
     private const val BYTE_MASK = 0xFFL
 
     fun bucket(flagName: String, userKey: String): Int {
-        val hash = MessageDigest.getInstance(SHA_256_HASH_TYPE)
+        val hash = MessageDigest.getInstance(BUCKET_HASH_TYPE_SHA_256)
             .digest("$flagName:$userKey".toByteArray(Charsets.UTF_8))
 
         var prefix = 0L

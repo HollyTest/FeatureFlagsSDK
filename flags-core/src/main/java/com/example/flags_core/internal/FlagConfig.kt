@@ -1,4 +1,4 @@
-package com.example.flags_core
+package com.example.flags_core.internal
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean

@@ -1,5 +1,17 @@
-package com.example.flags_core
+package com.example.flags_core.internal
 
+import com.example.flags_core.clientbuilder.FlagClient
+import com.example.flags_core.model.ConfigState
+import com.example.flags_core.model.EvaluatedFlag
+import com.example.flags_core.model.EvaluationResult
+import com.example.flags_core.model.RefreshCallback
+import com.example.flags_core.model.RefreshError
+import com.example.flags_core.model.RefreshResult
+import com.example.flags_core.model.RefreshStatus
+import com.example.flags_core.clientconfiguration.ConfigSource
+import com.example.flags_core.clientconfiguration.FlagSource
+import com.example.flags_core.clientconfiguration.CachedConfig
+import com.example.flags_core.clientconfiguration.FlagConfigStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,35 +32,25 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-class FlagClient internal constructor(
+internal class FlagClientImpl(
     private val source: FlagSource,
-    private val options: FlagConfigOptions,
+    private val fetchTimeoutMillis: Long,
+    private val validityDurationMillis: Long,
     private val store: FlagConfigStore,
-    dispatcher: CoroutineDispatcher,
-    private val currentMillisFetch: () -> Long
-): AutoCloseable {
-    @JvmOverloads constructor(
-        source: FlagSource,
-        options: FlagConfigOptions = FlagConfigOptions(),
-        store: FlagConfigStore = MemoryFlagConfigStore()
-    ): this(
-        source = source,
-        options = options,
-        store = store,
-        dispatcher = Dispatchers.IO,
-        currentMillisFetch = System::currentTimeMillis
-    )
-
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val currentMillisFetch: () -> Long = System::currentTimeMillis
+): FlagClient {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutex = Mutex()
     private val isClientClosed = AtomicBoolean(false)
     private val savedFlagConfig = AtomicReference<SavedFlagConfig?>(null)
-    private val mutableFlagStateFlow = MutableStateFlow(FlagState())
-    val flagStateFlow: StateFlow<FlagState> = mutableFlagStateFlow.asStateFlow()
+    private val mutableConfigStateFlow = MutableStateFlow(ConfigState())
+    
+    override val configStateFlow: StateFlow<ConfigState> = mutableConfigStateFlow.asStateFlow()
 
-    fun isEnabled(flagName: String, userKey: String, defaultValue: Boolean = false) = evaluate(flagName, userKey, defaultValue).enabled
+    override fun isEnabled(flagName: String, userKey: String, defaultValue: Boolean) = evaluate(flagName, userKey, defaultValue).enabled
 
-    fun evaluate(flagName: String, userKey: String, defaultValue: Boolean = false): EvaluatedFlag {
+    override fun evaluate(flagName: String, userKey: String, defaultValue: Boolean): EvaluatedFlag {
         // EvaluationResult.CLIENT_CLOSED
         if (isClientClosed.get()) return EvaluatedFlag(defaultValue, EvaluationResult.CLIENT_CLOSED)
 
@@ -60,7 +62,7 @@ class FlagClient internal constructor(
         val config = savedFlagConfig.get() ?: return EvaluatedFlag(defaultValue, EvaluationResult.CONFIG_MISSING)
 
         // EvaluationResult.CONFIG_EXPIRED
-        if ((currentMillisFetch() - config.savedAtMillis) !in 0..options.validityDurationMillis ) return EvaluatedFlag(defaultValue, EvaluationResult.CONFIG_EXPIRED)
+        if ((currentMillisFetch() - config.savedAtMillis) !in 0..validityDurationMillis ) return EvaluatedFlag(defaultValue, EvaluationResult.CONFIG_EXPIRED)
 
         // EvaluationResult.FLAG_MISSING
         val flag = config.flagConfig.flags[flagName] ?: return EvaluatedFlag(defaultValue, EvaluationResult.FLAG_MISSING)
@@ -75,7 +77,7 @@ class FlagClient internal constructor(
         return EvaluatedFlag(included, if (included) EvaluationResult.BUCKET_INCLUDED else EvaluationResult.BUCKET_NOT_INCLUDED, bucket)
     }
 
-    fun refresh(callBack: RefreshCallback) {
+    override fun refresh(callBack: RefreshCallback) {
         if (isClientClosed.get()) {
             callBack.onComplete(RefreshResult(RefreshStatus.CLOSED))
             return
@@ -88,52 +90,35 @@ class FlagClient internal constructor(
 
     internal suspend fun refreshConfig(): RefreshResult {
          // Client closed
-         // -- RefreshStatus.CLOSED
          if (isClientClosed.get()) return RefreshResult(RefreshStatus.CLOSED)
 
          // Fetch ongoing
-         // -- RefreshStatus.IN_PROGRESS
          if (!mutex.tryLock()) return RefreshResult(RefreshStatus.IN_PROGRESS)
 
-         mutableFlagStateFlow.update{ it.copy(isRefreshing = true, lastError = null)}
+         mutableConfigStateFlow.update{ it.copy(isRefreshing = true, lastError = null)}
 
-         // Fetch flag config
-         // -- FAILED: RefreshError.TIMEOUT
-         // -- FAILED: RefreshError.NETWORK
          try {
-
-             // Read Cache
-             // -- RefreshError.CACHE_READ
              fetchConfigCache()
+             val cachedConfig = savedFlagConfig.get()?.flagConfig
 
-             // Fetch from remote
-             // -- FAILED: RefreshError.INVALID_CONFIG
-             val rawJson = withTimeout(options.fetchTimeoutMillis.milliseconds) {
+             val rawJson = withTimeout(fetchTimeoutMillis.milliseconds) {
                  source.fetchFlagConfig()
              }
-             val newConfig = try {
+             val fetchedConfig = try {
                  FlagConfigParser.parse(rawJson)
              } catch (_: Exception) {
                  return setError(RefreshError.INVALID_CONFIG)
              }
 
-             val oldConfig = savedFlagConfig.get()?.flagConfig
-
-             // Remote config evaluation
-             // -- RefreshStatus.OLDER_VERSION_IGNORED
-             if (oldConfig != null && oldConfig.version > newConfig.version)
+             if (cachedConfig != null && cachedConfig.version > fetchedConfig.version)
                  return RefreshResult(RefreshStatus.OLDER_VERSION_IGNORED)
 
-             // Remote config evaluation
-             // -- FAILED: RefreshError.INVALID_CONFIG
-             if (oldConfig != null && oldConfig.version == newConfig.version && oldConfig != newConfig)
+             if (cachedConfig != null && cachedConfig.version == fetchedConfig.version && cachedConfig != fetchedConfig)
                  return setError(RefreshError.INVALID_CONFIG)
 
-             // Write to cache
-             // -- RefreshError.CACHE_WRITE
              currentCoroutineContext().ensureActive()
              val currentMillis = currentMillisFetch()
-             savedFlagConfig.set(SavedFlagConfig(newConfig, currentMillis))
+             savedFlagConfig.set(SavedFlagConfig(fetchedConfig, currentMillis))
              val cacheError = try {
                  store.write(CachedConfig(rawJson, currentMillis))
                  null
@@ -143,16 +128,13 @@ class FlagClient internal constructor(
                  RefreshError.CACHE_WRITE
              }
 
-             // Set final state
-             // -- RefreshStatus.UPDATE
-             // -- RefreshStatus.NO_CHANGE
-             mutableFlagStateFlow.update { it.copy(
-                 version = newConfig.version,
+             mutableConfigStateFlow.update { it.copy(
+                 version = fetchedConfig.version,
                  configSource = ConfigSource.REMOTE,
                  lastError = cacheError
              ) }
              return RefreshResult(
-                 status = if (oldConfig == newConfig) RefreshStatus.NO_CHANGE else RefreshStatus.UPDATE,
+                 status = if (cachedConfig == fetchedConfig) RefreshStatus.NO_CHANGE else RefreshStatus.UPDATE,
                  error = cacheError
              )
          } catch (_: TimeoutCancellationException) {
@@ -162,7 +144,7 @@ class FlagClient internal constructor(
          } catch (_: Exception) {
              return setError(RefreshError.NETWORK)
          } finally {
-             mutableFlagStateFlow.update { it.copy(isRefreshing = false) }
+             mutableConfigStateFlow.update { it.copy(isRefreshing = false) }
              mutex.unlock()
          }
     }
@@ -173,7 +155,7 @@ class FlagClient internal constructor(
             val cache = store.read() ?: return
             val cachedConfig = FlagConfigParser.parse(cache.rawConfigJson)
             savedFlagConfig.set(SavedFlagConfig(cachedConfig, cache.savedAtMillis))
-            mutableFlagStateFlow.value = FlagState(
+            mutableConfigStateFlow.value = ConfigState(
                 version = cachedConfig.version,
                 configSource = ConfigSource.CACHE,
                 isRefreshing = false
@@ -181,12 +163,12 @@ class FlagClient internal constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            mutableFlagStateFlow.update { it.copy(lastError = RefreshError.CACHE_READ) }
+            mutableConfigStateFlow.update { it.copy(lastError = RefreshError.CACHE_READ) }
         }
     }
 
     private fun setError(error: RefreshError): RefreshResult {
-        mutableFlagStateFlow.update { it.copy(lastError = error) }
+        mutableConfigStateFlow.update { it.copy(lastError = error) }
         return RefreshResult(RefreshStatus.FAILED, error)
     }
 

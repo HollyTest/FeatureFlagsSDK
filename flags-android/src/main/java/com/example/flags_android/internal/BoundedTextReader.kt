@@ -1,4 +1,4 @@
-package com.example.flags_android
+package com.example.flags_android.internal
 
 import java.io.IOException
 import java.io.Reader

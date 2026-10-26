@@ -1,7 +1,7 @@
 package com.example.featureflagssdk.server
 
 import com.example.featureflagssdk.models.MockScenes
-import com.example.flags_core.FlagSource
+import com.example.flags_core.clientconfiguration.FlagSource
 import kotlinx.coroutines.delay
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong

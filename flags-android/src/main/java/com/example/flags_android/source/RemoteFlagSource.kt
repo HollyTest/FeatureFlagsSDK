@@ -1,6 +1,9 @@
-package com.example.flags_android
+package com.example.flags_android.source
 
-import com.example.flags_core.FlagSource
+import com.example.flags_android.internal.ConfigError
+import com.example.flags_android.internal.REMOTE_CONFIG_READER_BOUNDED_LIMIT
+import com.example.flags_android.internal.readBoundedText
+import com.example.flags_core.clientconfiguration.FlagSource
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback

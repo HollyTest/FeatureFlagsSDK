@@ -3,13 +3,17 @@ package com.example.featureflagssdk.client
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.example.featureflagssdk.server.SampleFlagSource
-import com.example.flags_android.AndroidFlagClient
+import com.example.flags_android.client.AndroidFlagClient
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class SampleViewModel(application: Application): AndroidViewModel(application) {
 
     val flagSource = SampleFlagSource()
-    val flagClient = AndroidFlagClient.fromSource(application, flagSource, "test")
+    val flagClient = AndroidFlagClient.fromSource(
+        context = application,
+        flagSource = flagSource,
+        cacheKey = "test",
+    )
 
     val refreshResult = MutableStateFlow("No refresh")
 

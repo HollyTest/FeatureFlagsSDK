@@ -1,17 +1,22 @@
-package com.example.flags_android
+package com.example.flags_android.client
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Trace.beginSection
 import android.os.Trace.endSection
-import com.example.flags_core.EvaluatedFlag
-import com.example.flags_core.FlagClient
-import com.example.flags_core.FlagConfigOptions
-import com.example.flags_core.FlagSource
-import com.example.flags_core.RefreshCallback
-import com.example.flags_core.RefreshResult
-import com.example.flags_core.RefreshStatus
+import com.example.flags_core.model.EvaluatedFlag
+import com.example.flags_core.clientbuilder.FlagClient
+import com.example.flags_core.clientconfiguration.FlagSource
+import com.example.flags_core.model.RefreshCallback
+import com.example.flags_core.model.RefreshResult
+import com.example.flags_core.model.RefreshStatus
+import com.example.flags_android.source.RemoteFlagSource
+import com.example.flags_android.store.LocalFlagCacheStore
+import com.example.flags_android.internal.CONFIG_CACHE_FILE_KEY_PREFIX
+import com.example.flags_android.internal.CONFIG_CACHE_FILE_KEY_SUFFIX
+import com.example.flags_android.internal.CONFIG_CACHE_KEY_MAX_LENGTH
+import com.example.flags_android.internal.CONFIG_CACHE_DIRECTORY_HASH_KEY_SHA_256
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AndroidFlagClient private constructor(private val flagClient: FlagClient): AutoCloseable {
     private val mainLooperHandler = Handler(Looper.getMainLooper())
     private val isClientClosed = AtomicBoolean(false)
-    val flagState = flagClient.flagStateFlow
+    val flagState = flagClient.configStateFlow
 
     @JvmOverloads fun isEnabled(flagName: String, userKey: String, defaultValue: Boolean = false) = evaluate(flagName, userKey, defaultValue).enabled
 
@@ -62,11 +67,12 @@ class AndroidFlagClient private constructor(private val flagClient: FlagClient):
         fun fromUrl(
             context: Context,
             url: String,
-            options: FlagConfigOptions = FlagConfigOptions()
+            fetchTimeoutMillis: Long = 3000L,
+            validityDurationMillis: Long = 24 * 60 * 60 * 1000L
         ): AndroidFlagClient {
-            val source = RemoteFlagSource.getInstance(options.fetchTimeoutMillis, url)
+            val source = RemoteFlagSource.getInstance(fetchTimeoutMillis, url)
             val hashCacheKey = MessageDigest
-                .getInstance(SHA_256_HASH_TYPE)
+                .getInstance(CONFIG_CACHE_DIRECTORY_HASH_KEY_SHA_256)
                 .digest(url.toByteArray(Charsets.UTF_8))
                 .take(HASH_PREFIX_BYTE_COUNT)
                 .joinToString("") {HASH_FORMATTER.format(it)}
@@ -75,17 +81,20 @@ class AndroidFlagClient private constructor(private val flagClient: FlagClient):
                 context = context,
                 flagSource = source,
                 cacheKey = hashCacheKey,
-                options = options
+                fetchTimeoutMillis = fetchTimeoutMillis,
+                validityDurationMillis = validityDurationMillis
             )
         }
 
         // Common flag client
-        @JvmStatic @JvmOverloads
+        @JvmOverloads
+        @JvmStatic
         fun fromSource(
             context: Context,
             flagSource: FlagSource,
             cacheKey: String,
-            options: FlagConfigOptions = FlagConfigOptions()
+            fetchTimeoutMillis: Long = 3000L,
+            validityDurationMillis: Long = 24 * 60 * 60 * 1000L
         ): AndroidFlagClient {
             require(cacheKey.matches(cacheKeyPattern))
 
@@ -95,11 +104,11 @@ class AndroidFlagClient private constructor(private val flagClient: FlagClient):
             )
 
             return AndroidFlagClient(
-                FlagClient(
-                    source = flagSource,
-                    options = options,
-                    store = LocalFlagCacheStore(file)
-                )
+                FlagClient.builder(flagSource)
+                    .fetchTimeoutMillis(fetchTimeoutMillis)
+                    .validityDurationMillis(validityDurationMillis)
+                    .store(LocalFlagCacheStore(file))
+                    .build()
             )
         }
     }

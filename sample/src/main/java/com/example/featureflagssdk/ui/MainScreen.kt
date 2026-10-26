@@ -48,8 +48,16 @@ fun MainScreen(viewModel: SampleViewModel) {
     var scene by rememberSaveable { mutableStateOf(MockScenes.NORMAL.name) }
 
 
-    val evaluation = remember(flagState, user) {
+    val evaluationResult = remember(flagState, user) {
         viewModel.flagClient.evaluate(
+            flagName = "new_feature",
+            userKey = user,
+            defaultValue = false
+        )
+    }
+
+    val isFlagEnabled = remember(flagState, user) {
+        viewModel.flagClient.isEnabled(
             flagName = "new_feature",
             userKey = user,
             defaultValue = false
@@ -160,7 +168,7 @@ fun MainScreen(viewModel: SampleViewModel) {
             )
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (evaluation.enabled) Color.Green else Color.Red
+                    containerColor = if (isFlagEnabled) Color.Green else Color.Red
                 ),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -175,17 +183,17 @@ fun MainScreen(viewModel: SampleViewModel) {
                     )
                     Spacer(modifier = Modifier.padding(8.dp))
                     Text(
-                        text = "Feature Enabled: ${evaluation.enabled}",
+                        text = "Feature Enabled: $isFlagEnabled",
                         fontSize = 16.sp,
                         color = Color.DarkGray
                     )
                     Text(
-                        text = "Evaluation: ${evaluation.evaluationResult}",
+                        text = "Evaluation: ${evaluationResult.evaluationResult}",
                         fontSize = 16.sp,
                         color = Color.DarkGray
                     )
                     Text(
-                        text = "BucketIndex: ${evaluation.bucketIndex}",
+                        text = "BucketIndex: ${evaluationResult.bucketIndex}",
                         fontSize = 16.sp,
                         color = Color.DarkGray
                     )

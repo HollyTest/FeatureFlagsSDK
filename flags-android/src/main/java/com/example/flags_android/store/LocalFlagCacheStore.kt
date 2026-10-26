@@ -1,8 +1,10 @@
-package com.example.flags_android
+package com.example.flags_android.store
 
 import androidx.core.util.AtomicFile
-import com.example.flags_core.CachedConfig
-import com.example.flags_core.FlagConfigStore
+import com.example.flags_android.internal.LOCAL_CACHED_CONFIG_READER_BOUNDED_LIMIT
+import com.example.flags_android.internal.readBoundedText
+import com.example.flags_core.clientconfiguration.CachedConfig
+import com.example.flags_core.clientconfiguration.FlagConfigStore
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
